@@ -1,0 +1,11 @@
+{
+    "compilerOptions": {
+        "outDir": "./build/",
+        "module": "ES2020",
+        "noImplicitAny": true,
+        "preserveConstEnums": true,
+        "sourceMap": true
+    },
+    "include": ["*.ts"],
+    "exclude": ["node_modules"]
+}
