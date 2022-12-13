@@ -5,6 +5,12 @@
         output: {
             filename: "./build/MediaHiderPlugin.plugin.js",
             pathinfo: true,
+            library: {
+                type: "var",
+                name: "plugin",
+                export: "default",
+            },
+            clean: true,
         },
         resolve: {
             fallback: {
@@ -21,12 +27,9 @@
             },
             extensions: [".tsx", ".ts", ".js"],
         },
-        watch: true,
-        watchOptions: {
-            followSymlinks: true,
-        },
         mode: "development",
         devtool: "source-map",
+
         module: {
             rules: [
                 {
@@ -50,6 +53,9 @@
                     },
                 },
             ],
+        },
+        optimization: {
+            minimize: false,
         },
     };
 }

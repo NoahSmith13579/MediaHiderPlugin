@@ -15,7 +15,7 @@
         "webpack-cli": "^4.10.0"
     },
     "scripts": {
-        "start": "webpack",
+        "start": "webpack --watch",
         "build": "zpl build",
         "init": "zpl init"
     },
