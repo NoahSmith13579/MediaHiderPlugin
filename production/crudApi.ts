@@ -21,13 +21,10 @@ const getAllHiddenMediaObjects = async (): Promise<HashedObject[]> => {
     return HashedObjects;
 };
 
-const getHiddenMediaObject = async (url: string): Promise<HashedObject> => {
+const getHiddenMediaObject = async (url: string): Promise<boolean> => {
     debug(`getHiddenMedia(${url})`);
-    const { content: HashedObject } = await doRequest<HashedObject>(
-        `/hiddenMedia/${url}`,
-        {}
-    );
-    return HashedObject;
+    const response = (await fetch(url, { body: url, method: "POST" })).ok;
+    return response;
 };
 const addHiddenMediaObject = async (url: string) => {
     debug(`addHiddenMediaObject(${url})`);

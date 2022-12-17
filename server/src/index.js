@@ -11,6 +11,7 @@ const fs = require("fs");
 const cache = require("memory-cache");
 const setupDb = require("./database");
 const stream = require("node:stream");
+const fetch = require("node-fetch");
 
 const PORT = process.env.PORT || 4000;
 
@@ -66,6 +67,7 @@ app.get(
                 ...HashedObject,
             },
         }).end();
+        return;
     })
 );
 //Get all items from HashedObjects
@@ -90,12 +92,14 @@ app.post(
     "/media",
     asyncHandler(async (req, res) => {
         // Parse the media link from the request body
-        const mediaLink = req.body.url;
+        const mediaLink = req.body;
+        console.log("body.url: ", mediaLink);
 
         // Check if the media link is in the cache
         const cached = !!cache.get(mediaLink);
         if (cached) {
             // If the media link is in the cache, return a 403 response
+            console.log("Already in Cache");
             res.sendStatus(403);
             return;
         }
@@ -122,9 +126,11 @@ app.post(
                     console.log(`${url} has expired from cache`);
                 });
                 res.sendStatus(200);
+                return;
             } else {
                 // If the media hash is not unique, return a 403 response
                 res.sendStatus(403);
+                return;
             }
         });
     })
@@ -133,19 +139,20 @@ app.post(
 //TODO reduce repetition
 // Add item to HashedObjects
 app.post(
-    "/hiddenMedia/:url",
+    "/hiddenMedia/block",
     asyncHandler(async (req, res) => {
         if (!req.body) {
-            res.send(400).end();
+            res.status(400).end();
+            return;
         }
         const mediaLink = req.body;
         const cached = cache.get(mediaLink);
-
         let payload;
         // If link is in cache, use the premade hash
         if (!!cached) {
             payload = { mediaLink: cached };
-            res.send({ success: true, content: payload }.end());
+            res.send({ success: true, content: payload }).end();
+            return;
             // If link is not in cache, make a hash and use it instead
         } else {
             const response = await fetch(mediaLink);
@@ -165,19 +172,22 @@ app.post(
                 if (unique) {
                     // If the media hash is unique, add it to the list of media hashes and return a 200 response
                     MEDIA_HASHES.push(mediaHash);
+                    // expires in one hour
                     cache.put(
                         mediaLink,
                         mediaHash,
-                        36000000,
+                        1000 * 60 * 60,
                         function (url, hash) {
                             console.log(`${url} has expired from cache`);
                         }
                     );
                     payload = { mediaLink: mediaHash };
                     res.send({ success: true, content: payload }).end();
+                    return;
                 } else {
                     // If the media hash is not unique, return a 403 response
-                    res.sendStatus(403);
+                    res.status(403);
+                    return;
                 }
             });
         }
@@ -192,6 +202,7 @@ app.delete(
         const HashedObject = await database.getHashedObject(url);
         if (!HashedObject) {
             res.send(400).end();
+            return;
         }
 
         await database.deleteHashedObject(url);

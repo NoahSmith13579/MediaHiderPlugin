@@ -2,23 +2,5 @@
     "currentVersionInfo": {
         "version": "0.1",
         "hasShownChangelog": true
-    },
-    "settings": {
-        "test": {
-            "coom": false
-        },
-        "HiddenMediaListid": {}
-    },
-    "dogs": [
-        "yorky",
-        "lab",
-        "doggy",
-        "pupper",
-        "https://images-ext-1.discordapp.net/external/yV5WxnnBwXQY-E5tGCtjDANIP7QPuDSPH-Nx89-MVv0/https/media.tenor.com/O9EUWnp4FQQAAAPo/soldier-boy-the-boys.mp4",
-        "https://media.discordapp.net/attachments/730585353794355346/1037501162099834940/IMG_3146.gif",
-        "https://cdn.discordapp.com/attachments/201828741154865161/1042161601354137621/Snaptik.app_7088207569260498181.mp4",
-        "https://cdn.discordapp.com/attachments/201828741154865161/1042160692775624815/polandarticle5.mp4",
-        "https://cdn.discordapp.com/attachments/201828741154865161/1042159082280329366/unknown.png"
-    ],
-    "HiderList": []
+    }
 }

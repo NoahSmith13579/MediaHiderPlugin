@@ -58,13 +58,75 @@ class Dummy {
     stop() {}
 }
 
-const {
-    createCacheEntry,
-    getAllHiddenMediaObjects,
-    getHiddenMediaObject,
-    addHiddenMediaObject,
-    deleteHiddenMediaObject,
-} = require("../crudApi");
+var API_URL = "http://localhost:4000";
+/**
+ * Fetches from provided url and returns as JSON.
+ * A fetch wrapper with error handling.
+ */
+const doRequest = async (url, params) => {
+    if (typeof params.body !== "undefined" && typeof params.body !== "string") {
+        params.body = JSON.stringify(params.body);
+    }
+
+    const response = await fetch(API_URL + url, params);
+
+    if (response.status !== 200) {
+        throw new Error(
+            `Request failed with status ${response.status}: ${response.statusText}`
+        );
+    }
+
+    return await response.json();
+};
+
+var makeLog = function (name) {
+    return {
+        log: function (message) {
+            return console.log("[".concat(name.toUpperCase(), "]"), message);
+        },
+        debug: function (message) {
+            return console.debug("[".concat(name.toUpperCase(), "]"), message);
+        },
+        error: function (message) {
+            return console.error("[".concat(name.toUpperCase(), "]"), message);
+        },
+    };
+};
+
+var { log, debug } = makeLog("API");
+const createCacheEntry = async (payload) => {
+    return await doRequest("/media", {
+        body: payload,
+        method: "POST",
+    });
+};
+const getAllHiddenMediaObjects = async () => {
+    debug(`getHiddenMedia(all)`);
+    const { content: HashedObjects } = await doRequest(`/hiddenMedia`, {});
+    return HashedObjects;
+};
+const getHiddenMediaObject = async (url) => {
+    debug(`getHiddenMedia(${url})`);
+    const response = (await fetch(url, { body: url, method: "POST" })).ok;
+    return response;
+};
+
+const addHiddenMediaObject = async (url) => {
+    debug(`addHiddenMediaObject(${url})`);
+    return await doRequest(`/hiddenMedia/${url}`, {
+        body: url,
+        method: "POST",
+    });
+};
+
+const deleteHiddenMediaObject = async (url) => {
+    debug(`DeleteHashedObject(${url})`);
+    await doRequest(`/hiddenmedia/${url}`, {
+        body: url,
+        method: "Delete",
+    });
+    return url;
+};
 
 if (!global.ZeresPluginLibrary) {
     BdApi.showConfirmationModal(
@@ -259,7 +321,9 @@ module.exports = !global.ZeresPluginLibrary
                                                           "imageMedia: ",
                                                           imageMedia
                                                       );
-                                                      url = imageMedia.href;
+                                                      url =
+                                                          imageMedia.href ??
+                                                          imageMedia.src;
                                                   }
                                                   if (!!sticker) {
                                                       Logger.info(
@@ -292,13 +356,13 @@ module.exports = !global.ZeresPluginLibrary
                                                   // only triggers if url is mutated by the previous block
                                                   if (url !== undefined) {
                                                       createCacheEntry(url);
+                                                      //TODO encode url
+                                                      //TODO this is a "response" object, always true at evaluation, how do I do this correctly?
                                                       const isHidden =
                                                           getHiddenMediaObject(
                                                               url
                                                           );
-                                                      //Logger.info("Url is: ",url);
-                                                      //const isHidden = HMstore.includes(url);
-
+                                                      Logger.info(isHidden);
                                                       // if hidden media is detected and there is not already a MediaHiderWrapper: hides element
                                                       if (
                                                           isHidden &&
