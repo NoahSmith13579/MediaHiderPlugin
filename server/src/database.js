@@ -1,23 +1,36 @@
 module.exports = (db) => {
-    const hashCol = db.collection("HashedObjects");
+    const hashCol = db.collection("hashes");
 
-    const getAllHashedObjects = async () => hashCol.find({}).toArray();
+    const storeHash = async ({ originalUrl, hash }) => {
+        return await hashCol.insertOne({ originalUrl, hash });
+    };
 
-    const getHashedObject = async (url) => hashCol.findOne({ url });
+    const getAll = async () => {
+        return hashCol.find({}).toArray();
+    };
 
-    const addHashedObject = async (hashObject) => hashCol.insert(hashObject);
+    const getFromHash = async (hash) => {
+        return await hashCol.findOne({ hash });
+    };
 
-    const deleteHashedObject = async (url) => hashCol.deleteOne({ url: url });
+    const getFromUrl = async (url) => {
+        return await hashCol.findOne({ url });
+    };
 
-    const getUrlbyHash = async (obj, value) => {
-        return Object.keys(obj).find((key) => obj[key] === value);
+    const deleteByUrl = async (url) => {
+        await hashCol.deleteOne({ url });
+    };
+
+    const deleteByHash = async (hash) => {
+        await hashCol.deleteOne({ hash });
     };
 
     return {
-        getAllHashedObjects,
-        getHashedObject,
-        addHashedObject,
-        deleteHashedObject,
-        getUrlbyHash,
+        storeHash,
+        getAll,
+        getFromHash,
+        getFromUrl,
+        deleteByUrl,
+        deleteByHash,
     };
 };

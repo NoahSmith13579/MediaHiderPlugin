@@ -1,5 +1,7 @@
 require("dotenv").config();
 
+const { MONGO_CONNECTION_STRING: CON_STR, PORT } = process.env;
+
 const cors = require("cors");
 const http = require("http");
 const asyncHandler = require("express-async-handler");
@@ -8,222 +10,171 @@ const morgan = require("morgan");
 const bodyParser = require("body-parser");
 const crypto = require("crypto");
 const fs = require("fs");
-const cache = require("memory-cache");
 const setupDb = require("./database");
-const stream = require("node:stream");
+const nodeStream = require("node:stream");
 const fetch = require("node-fetch");
+const { MongoClient } = require("mongodb");
 
-const PORT = process.env.PORT || 4000;
+const MediaCache = require("./cache");
+const initMongo = require("./database");
+
+const cache = new MediaCache();
 
 const app = express();
 
-var corsOptions = {
+const corsOptions = {
     origin: "*",
 };
 
-var MEDIA_HASHES = [];
+let database; // 🥴
 
-let database;
+const getHash = (url) => {
+    return new Promise(async (resolve, reject) => {
+        const response = await fetch(url);
+        // Stream the media from the link
+        const stream = response.body.pipe(new nodeStream.PassThrough());
+        // Create a hash of the media
+        const hash = crypto.createHash("md5");
+        stream.on("data", (chunk) => {
+            hash.update(chunk);
+        });
 
-//Error handler middleware
-app.use(function (err, req, res, next) {
+        let handle = setTimeout(() => reject("Request timed out."), 30 * 1000);
+
+        // When the streaming is finished, compare the media hash with the existing list of media hashes
+        stream.on("end", () => {
+            const mediaHash = hash.digest("hex");
+
+            clearTimeout(handle);
+            resolve(mediaHash);
+        });
+    });
+};
+
+const decode = (string) => atob(string.replace("-", "+").replace("_", "/"));
+
+const encode = (string) => btoa(string.replace("+", "-").replace("/", "_"));
+
+//Error Handler Middleware
+app.use((err, req, res, next) => {
     console.error(err.stack);
     if (res.headersSent) {
         return next(err);
     }
+
     res.status(500);
-    res.send({
-        message: "An internal server error occured.",
-        success: false,
-        content: null,
-    });
-    res.end();
+    res.send("An internal error ocured.");
 });
 
 app.use(morgan("dev"));
 app.use(cors(corsOptions));
-app.use(bodyParser.text({ type: "*/*" }));
+//app.use(bodyParser.text({type:"*/*"}));
 
 app.get("/", (req, res) => {
-    res.send("Hello World").end();
+    res.send("Fuck off").end();
 });
 
-//Get url and its hash from HashedObjects
-app.get(
-    "/hiddenMedia/:url",
+app.post(
+    "/media/:url",
     asyncHandler(async (req, res) => {
-        const { url } = req.params;
+        // block a media
+        console.log("POST REQ", req.params.url);
 
-        const HashedObject = await database.getHashedObject(url);
+        const url = decode(req.params.url);
 
-        if (!HashedObject) {
-            res.status(404).end();
+        console.log("Decoded url", url);
+    })
+);
+
+app.get(
+    "/media/",
+    asyncHandler(async (req, res) => {
+        const hiddenArray = await database.getAll();
+        return hiddenArray;
+    })
+);
+
+app.get(
+    "/media/:url",
+    asyncHandler(async (req, res) => {
+        // get specific media
+        //console.log("GET REQ", req.params.url);
+
+        const url = decode(req.params.url);
+
+        console.log("GET url", url);
+
+        // check cache first
+        const cacheResult = cache.get(url);
+
+        if (!!cacheResult) {
+            const { blocked } = cacheResult;
+            res.status(blocked ? 403 : 200).end();
             return;
         }
 
-        res.send({
-            success: true,
-            content: {
-                ...HashedObject,
-            },
-        }).end();
+        console.log("NOT CACHED");
+
+        // check db
+        const media = await database.getFromUrl(url);
+        if (!!media) {
+            const { hash } = media;
+            cache.cache(url, { url, hash, blocked: true });
+            res.status(403).end();
+            return;
+        }
+
+        console.log("UNIQUE URL");
+
+        const hash = await getHash(url);
+
+        console.log("HASH IS", hash);
+
+        const hashedMedia = await database.getFromHash(hash);
+
+        if (!!hashedMedia) {
+            cache.cache(url, { url, hash, blocked: true });
+            res.status(403).end();
+            return;
+        }
+
+        console.log("NOT BLOCKED");
+
+        cache.cache(url, { url, hash, blocked: false });
+
+        res.status(200).end();
+
         return;
     })
 );
-//Get all items from HashedObjects
-app.get(
-    "/hiddenMedia",
+
+app.patch(
+    "/media/:url",
     asyncHandler(async (req, res) => {
-        const HashedObjects = await database.getAllHashedObjects();
-
-        if (!HashedObjects) {
-            res.status(404).end();
-            return;
-        }
-
-        res.send({
-            success: true,
-            content: { ...HashedObjects },
-        }).end();
-    })
-);
-//Create cache
-app.post(
-    "/media",
-    asyncHandler(async (req, res) => {
-        // Parse the media link from the request body
-        const mediaLink = req.body;
-        console.log("body.url: ", mediaLink);
-
-        // Check if the media link is in the cache
-        const cached = !!cache.get(mediaLink);
-        if (cached) {
-            // If the media link is in the cache, return a 403 response
-            console.log("Already in Cache");
-            res.sendStatus(403);
-            return;
-        }
-
-        const response = await fetch(mediaLink);
-        // Stream the media from the link
-        const MediaStream = response.body.pipe(new stream.PassThrough());
-        // Create a hash of the media
-        const hash = crypto.createHash("md5");
-        MediaStream.on("data", (chunk) => {
-            hash.update(chunk);
-        });
-
-        // When the streaming is finished, compare the media hash with the existing list of media hashes
-        MediaStream.on("end", () => {
-            const mediaHash = hash.digest("hex");
-
-            // Check if the media hash is unique
-            const unique = !MEDIA_HASHES.includes(mediaHash);
-            if (unique) {
-                // If the media hash is unique, add it to the list of media hashes and return a 200 response
-                MEDIA_HASHES.push(mediaHash);
-                cache.put(mediaLink, mediaHash, 36000000, function (url, hash) {
-                    console.log(`${url} has expired from cache`);
-                });
-                res.sendStatus(200);
-                return;
-            } else {
-                // If the media hash is not unique, return a 403 response
-                res.sendStatus(403);
-                return;
-            }
-        });
+        // update
+        console.log("PATCH REQ", req.params.url);
     })
 );
 
-//TODO reduce repetition
-// Add item to HashedObjects
-app.post(
-    "/hiddenMedia/block",
-    asyncHandler(async (req, res) => {
-        if (!req.body) {
-            res.status(400).end();
-            return;
-        }
-        const mediaLink = req.body;
-        const cached = cache.get(mediaLink);
-        let payload;
-        // If link is in cache, use the premade hash
-        if (!!cached) {
-            payload = { mediaLink: cached };
-            res.send({ success: true, content: payload }).end();
-            return;
-            // If link is not in cache, make a hash and use it instead
-        } else {
-            const response = await fetch(mediaLink);
-            const MediaStream = response.body.pipe(new stream.PassThrough());
-            // Create a hash of the media
-            const hash = crypto.createHash("md5");
-            MediaStream.on("data", (chunk) => {
-                hash.update(chunk);
-            });
-
-            // When the streaming is finished, compare the media hash with the existing list of media hashes
-            MediaStream.on("end", () => {
-                const mediaHash = hash.digest("hex");
-
-                // Check if the media hash is unique
-                const unique = !MEDIA_HASHES.includes(mediaHash);
-                if (unique) {
-                    // If the media hash is unique, add it to the list of media hashes and return a 200 response
-                    MEDIA_HASHES.push(mediaHash);
-                    // expires in one hour
-                    cache.put(
-                        mediaLink,
-                        mediaHash,
-                        1000 * 60 * 60,
-                        function (url, hash) {
-                            console.log(`${url} has expired from cache`);
-                        }
-                    );
-                    payload = { mediaLink: mediaHash };
-                    res.send({ success: true, content: payload }).end();
-                    return;
-                } else {
-                    // If the media hash is not unique, return a 403 response
-                    res.status(403);
-                    return;
-                }
-            });
-        }
-    })
-);
-
-// Remove item from HashedObjects
 app.delete(
-    "/blockedMedia",
+    "/media/:url",
     asyncHandler(async (req, res) => {
-        const { url } = req.params;
-        const HashedObject = await database.getHashedObject(url);
-        if (!HashedObject) {
-            res.send(400).end();
-            return;
-        }
-
-        await database.deleteHashedObject(url);
-        res.send({ success: true });
+        // delete
+        console.log("DELETE REQ", req.params.url);
     })
 );
-
-const { MongoClient } = require("mongodb");
-
-const CON_STR = process.env.MONGO_CONNECTION_STRING;
 
 const mongo = new MongoClient(CON_STR);
 
 const asyncMain = async () => {
     await mongo.connect();
-    console.log("Successfully connected to mongo");
+    console.log("Connected to Mongo");
 
-    database = setupDb(mongo.db("MediaHiderPlugin"));
+    database = initMongo(mongo.db("MediaHiderPlugin")); // TODO: Make this configurable.
 
     app.listen(PORT, () => {
-        console.log(`Listening on: ${PORT}`);
+        console.log(`Listening on ${PORT}`);
     });
 };
+
 asyncMain().catch(console.error);

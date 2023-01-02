@@ -11,7 +11,7 @@
 /*@cc_on
 @if (@_jscript)
     
-    // Offer to self-install for clueless users that try to run this directly.
+    // Offer to self-install for 🤡 users that try to run this directly.
     var shell = WScript.CreateObject("WScript.Shell");
     var fs = new ActiveXObject("Scripting.FileSystemObject");
     var pathPlugins = shell.ExpandEnvironmentStrings("%APPDATA%\\BetterDiscord\\plugins");
@@ -57,6 +57,7 @@ class Dummy {
     start() {}
     stop() {}
 }
+//TODO reduce amount of nesting
 
 var API_URL = "http://localhost:4000";
 /**
@@ -94,35 +95,51 @@ var makeLog = function (name) {
 };
 
 var { log, debug } = makeLog("API");
-const createCacheEntry = async (payload) => {
-    return await doRequest("/media", {
-        body: payload,
-        method: "POST",
-    });
-};
-const getAllHiddenMediaObjects = async () => {
-    debug(`getHiddenMedia(all)`);
-    const { content: HashedObjects } = await doRequest(`/hiddenMedia`, {});
-    return HashedObjects;
-};
-const getHiddenMediaObject = async (url) => {
-    debug(`getHiddenMedia(${url})`);
-    const response = (await fetch(url, { body: url, method: "POST" })).ok;
-    return response;
-};
 
+/**
+ * @params {string} url - URL to be checked
+ * @returns {boolean} Is media hidden
+ */
+const isMediaHidden = async (url) => {
+    debug(`getHiddenMedia(${url})`);
+    let urlEncoded = btoa(url).replace("+", "-").replace("/", "_");
+    console.log("ENCODED", urlEncoded);
+    const response = await fetch(API_URL + "/media/" + urlEncoded, {
+        method: "GET",
+    });
+    return await response.ok();
+};
+/**
+ *
+ * @returns {Array} Array of all hidden media
+ */
+const getAllHiddenMediaObjects = async () => {
+    debug(`getAllHiddenMediaObjects()`);
+
+    return await doRequest(`/media`, {});
+};
+/**
+ * @param {string} url - URL of media to be hidden
+ * @returns {null}
+ */
 const addHiddenMediaObject = async (url) => {
     debug(`addHiddenMediaObject(${url})`);
-    return await doRequest(`/hiddenMedia/${url}`, {
-        body: url,
+    let urlEncoded = encodeURI(url);
+    return await doRequest(`/hiddenmedia/block`, {
+        body: urlEncoded,
         method: "POST",
     });
 };
-
+/**
+ *
+ * @param {string} url - URL of media to be unhidden
+ * @returns
+ */
 const deleteHiddenMediaObject = async (url) => {
     debug(`DeleteHashedObject(${url})`);
-    await doRequest(`/hiddenmedia/${url}`, {
-        body: url,
+    let urlEncoded = encodeURI(url);
+    await doRequest(`/hiddenmedia/block`, {
+        body: urlEncoded,
         method: "Delete",
     });
     return url;
@@ -191,8 +208,8 @@ module.exports = !global.ZeresPluginLibrary
               const { DOM, ContextMenu, Patcher, Data } = BdApi;
               const { Logger } = Library;
               //Data.load/save for the hide list.
-              this.savedData = new Set(Data.load(config.name, "HiderList"));
-              const HMstore = Array.from(this.savedData);
+              //this.savedData = new Set(Data.load(config.name, "HiderList"));
+              //const HMstore = Array.from(this.savedData);
               const HiddenMediaHTMLexpanded = `<div class="wrapper-30-Nkg cozy-VmLDNB zalgo-26OfGz MediaHiderWrapper" role="article">
                 <div class="contents-2MsGLg">
                     <div class="blockedSystemMessage-3FmE9n container-x059i8 cozy-S5wsfF">
@@ -273,7 +290,7 @@ module.exports = !global.ZeresPluginLibrary
                                               "li"
                                           );
                                       // do this to each li in the list
-                                      CMLli.forEach((li) => {
+                                      CMLli.forEach(async (li) => {
                                           const MessageAccessory =
                                               li.querySelector(
                                                   MessageAccessorySelector
@@ -355,17 +372,16 @@ module.exports = !global.ZeresPluginLibrary
                                                   }
                                                   // only triggers if url is mutated by the previous block
                                                   if (url !== undefined) {
-                                                      createCacheEntry(url);
                                                       //TODO encode url
                                                       //TODO this is a "response" object, always true at evaluation, how do I do this correctly?
                                                       const isHidden =
-                                                          getHiddenMediaObject(
+                                                          await isMediaHidden(
                                                               url
                                                           );
-                                                      Logger.info(isHidden);
+                                                      Logger.info(!!isHidden);
                                                       // if hidden media is detected and there is not already a MediaHiderWrapper: hides element
                                                       if (
-                                                          isHidden &&
+                                                          !!isHidden &&
                                                           li.querySelector(
                                                               "div[class*=MediaHiderWrapper]"
                                                           ) === null
@@ -482,7 +498,8 @@ module.exports = !global.ZeresPluginLibrary
                                               "imageMedia: ",
                                               imageMedia
                                           );
-                                          targetUrl = imageMedia.href;
+                                          targetUrl =
+                                              imageMedia.href ?? imageMedia.src;
                                           targetElement = imageMedia;
                                       }
                                       if (!!sticker) {
@@ -520,7 +537,7 @@ module.exports = !global.ZeresPluginLibrary
                                       }
                                   }
                               }
-                              //END OF AUTISM
+                              //BEGINNING OF AUTISM
 
                               const hasHref = !!props.target.href;
                               const hasAttachments =
@@ -532,6 +549,7 @@ module.exports = !global.ZeresPluginLibrary
                               if (!hasHref && !hasAttachments && !hasEmbeds) {
                                   return;
                               }
+                              //TODO this is a promise aswell
                               const HiddenMediaList =
                                   getAllHiddenMediaObjects();
                               //populates submenu with items from store
@@ -615,10 +633,14 @@ module.exports = !global.ZeresPluginLibrary
                                   type: "text",
                                   label: "Hide Media",
                                   action: (e) => {
+                                      const MediaFileName = targetUrl.slice(
+                                          targetUrl.lastIndexOf("/") + 1,
+                                          targetUrl.length
+                                      );
                                       //Modal for confirming hide
                                       BdApi.showConfirmationModal(
                                           "Hide this media?",
-                                          `link`,
+                                          `${MediaFileName}`,
                                           {
                                               confirmText: "Hide",
                                               cancelText: "Cancel",
@@ -700,7 +722,7 @@ module.exports = !global.ZeresPluginLibrary
 
                   onStart() {
                       this.patchMessageContextMenu();
-                      Data.load(config.name, "HiderList");
+                      //Data.load(config.name, "HiderList");
                       //observer
                       this.channelObserver = new MutationObserver(
                           this.checkCurrentChannel
@@ -730,73 +752,3 @@ module.exports = !global.ZeresPluginLibrary
           return plugin(Plugin, Api);
       })(global.ZeresPluginLibrary.buildPlugin(config));
 /*@end@*/
-
-/*  
-                  imageToUint8array(mediaElement) {
-                      const canvas = document.createElement("canvas");
-                      const ElementWidth =
-                          mediaElement.naturalWidth ??
-                          mediaElement.width ??
-                          mediaElement.style.maxWidth ??
-                          mediaElement.closest("div").style.width;
-                      const ElementHeight =
-                          mediaElement.naturalHeight ??
-                          mediaElement.height ??
-                          mediaElement.style.maxHeight ??
-                          mediaElement.closest("div").style.height;
-                      var newElement;
-                      if (mediaElement.nodeName === "VIDEO") {
-                          newElement = document.createElement("video");
-                      } else {
-                          newElement = new Image();
-                      }
-                      canvas.width = ElementWidth;
-                      canvas.height = ElementHeight;
-                      const context = canvas.getContext("2d");
-                      context.width = ElementWidth;
-                      context.height = ElementHeight;
-                      newElement.crossOrigin = "anonymous";
-                      newElement.src = mediaElement.src;
-                      newElement.width = ElementWidth;
-                      newElement.height = ElementHeight;
-                      newElement.style.aspectRatio =
-                          mediaElement.style.aspectRatio;
-                      if (newElement.nodeName === "VIDEO") {
-                          newElement.poster = mediaElement.poster;
-                      }
-                      document.body.append(newElement);
-                      Logger.info("newElement: ", newElement);
-                      newElement.onload = function () {
-                          context.drawImage(newElement, 0, 0);
-                          const DataURL = canvas.toDataURL("image/png");
-                          Logger.info("DataURL: ", DataURL);
-                      };
-                      const Uint8 = new Uint8Array(
-                          context.getImageData(
-                              0,
-                              0,
-                              ElementWidth,
-                              ElementHeight
-                          ).data.buffer
-                      );
-                      context.clearRect(0, 0, canvas.width, canvas.height);
-                      canvas.remove();
-                      newElement.remove();
-                      return Uint8;
-                  }
-                  //TODO Pulled from the internet, does not work, fix after the step above
-                  hash(filename, Uint8Array) {
-                      const newArray = Array.from(Uint8Array);
-                      const ArrayForHash = newArray.push(filename);
-                      var hash = 0,
-                          i,
-                          chr;
-                      if (ArrayForHash.length === 0) return hash;
-                      for (i = 0; i < ArrayForHash.length; i++) {
-                          chr = this.charCodeAt(i);
-                          hash = (hash << 5) - hash + chr;
-                          hash |= 0; // Convert to 32bit integer
-                      }
-                      return hash;
-                  }
- */
