@@ -97,8 +97,9 @@ var makeLog = function (name) {
 var { log, debug } = makeLog("API");
 
 /**
+ *
  * @params {string} url - URL to be checked
- * @returns {boolean} Is media hidden
+ * @returns {Promise<boolean>} Is media hidden
  */
 const isMediaHidden = async (url) => {
     debug(`getHiddenMedia(${url})`);
@@ -107,25 +108,28 @@ const isMediaHidden = async (url) => {
     const response = await fetch(API_URL + "/media/" + urlEncoded, {
         method: "GET",
     });
-    return await response.ok();
+    return !response.ok;
 };
 /**
  *
- * @returns {Array} Array of all hidden media
+ * @returns {Promise<Array>} Array of all hidden media
  */
 const getAllHiddenMediaObjects = async () => {
     debug(`getAllHiddenMediaObjects()`);
-
-    return await doRequest(`/media`, {});
+    const response = await fetch(API_URL + `/media`, { method: "GET" });
+    const content = await response.json();
+    console.log("response is: ", content);
+    return content;
 };
 /**
+ *
  * @param {string} url - URL of media to be hidden
  * @returns {null}
  */
 const addHiddenMediaObject = async (url) => {
     debug(`addHiddenMediaObject(${url})`);
-    let urlEncoded = encodeURI(url);
-    return await doRequest(`/hiddenmedia/block`, {
+    let urlEncoded = btoa(url).replace("+", "-").replace("/", "_");
+    return await fetch(API_URL + "/media/" + urlEncoded, {
         body: urlEncoded,
         method: "POST",
     });
@@ -133,12 +137,12 @@ const addHiddenMediaObject = async (url) => {
 /**
  *
  * @param {string} url - URL of media to be unhidden
- * @returns
+ * @returns {null}
  */
 const deleteHiddenMediaObject = async (url) => {
     debug(`DeleteHashedObject(${url})`);
-    let urlEncoded = encodeURI(url);
-    await doRequest(`/hiddenmedia/block`, {
+    let urlEncoded = btoa(url).replace("+", "-").replace("/", "_");
+    await fetch(API_URL + "/media/" + urlEncoded, {
         body: urlEncoded,
         method: "Delete",
     });
@@ -370,15 +374,20 @@ module.exports = !global.ZeresPluginLibrary
                                                       );
                                                       url = videoMedia.src;
                                                   }
+                                                  Logger.info(
+                                                      "Url type: ",
+                                                      typeof url
+                                                  );
                                                   // only triggers if url is mutated by the previous block
                                                   if (url !== undefined) {
-                                                      //TODO encode url
-                                                      //TODO this is a "response" object, always true at evaluation, how do I do this correctly?
                                                       const isHidden =
                                                           await isMediaHidden(
                                                               url
                                                           );
-                                                      Logger.info(!!isHidden);
+                                                      Logger.log(
+                                                          "Is this hidden?: ",
+                                                          isHidden
+                                                      );
                                                       // if hidden media is detected and there is not already a MediaHiderWrapper: hides element
                                                       if (
                                                           !!isHidden &&
@@ -451,7 +460,7 @@ module.exports = !global.ZeresPluginLibrary
                   patchMessageContextMenu() {
                       this.contextMenuPatch = ContextMenu.patch(
                           "message",
-                          (retVal, props) => {
+                          async (retVal, props) => {
                               // TODO Find better solution
                               const ParentLi = props.target.closest("li");
                               const MessageAccessory = ParentLi.querySelector(
@@ -549,19 +558,19 @@ module.exports = !global.ZeresPluginLibrary
                               if (!hasHref && !hasAttachments && !hasEmbeds) {
                                   return;
                               }
-                              //TODO this is a promise aswell
+                              //TODO Breaks CSS styling if opened too close to bottom of screen
                               const HiddenMediaList =
-                                  getAllHiddenMediaObjects();
+                                  await getAllHiddenMediaObjects();
                               //populates submenu with items from store
                               const MediaHiderHiddenItems = [];
                               for (var i = 0; HiddenMediaList.length > i; i++) {
                                   const item = HiddenMediaList[i];
-                                  const MediaFileName = item.url.slice(
-                                      item.url.lastIndexOf("/") + 1,
-                                      item.url.length
+                                  const MediaFileName = item.originalUrl.slice(
+                                      item.originalUrl.lastIndexOf("/") + 1,
+                                      item.originalUrl.length
                                   );
 
-                                  const label = item.url;
+                                  const label = item.originalUrl;
                                   // individual item/ unhider logic
                                   const MHHitem = ContextMenu.buildItem({
                                       label: MediaFileName,
@@ -618,7 +627,7 @@ module.exports = !global.ZeresPluginLibrary
                                                               }
                                                           }
                                                           deleteHiddenMediaObject(
-                                                              item.url
+                                                              item.originalUrl
                                                           );
                                                       }
                                                   },
@@ -645,17 +654,27 @@ module.exports = !global.ZeresPluginLibrary
                                               confirmText: "Hide",
                                               cancelText: "Cancel",
                                               danger: true,
-                                              onConfirm: () => {
+                                              onConfirm: async () => {
                                                   const HiddenMediaList =
-                                                      getAllHiddenMediaObjects();
-
+                                                      await getAllHiddenMediaObjects();
+                                                  console.log(
+                                                      "HiddenMediaList: ",
+                                                      HiddenMediaList
+                                                  );
                                                   const mediaLink = targetUrl;
                                                   // check if url is already in list
-                                                  if (
-                                                      !HiddenMediaList.hasOwnProperty(
-                                                          mediaLink
-                                                      )
-                                                  ) {
+                                                  const isNotUnique =
+                                                      HiddenMediaList.find(
+                                                          (obj) =>
+                                                              obj.url ===
+                                                              mediaLink
+                                                      );
+                                                  console.log(
+                                                      "isNotUnique: ",
+                                                      isNotUnique
+                                                  );
+                                                  //HiddenMediaList.hasOwnProperty(mediaLink)
+                                                  if (!isNotUnique) {
                                                       addHiddenMediaObject(
                                                           mediaLink
                                                       );

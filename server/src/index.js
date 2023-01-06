@@ -73,24 +73,52 @@ app.use(cors(corsOptions));
 app.get("/", (req, res) => {
     res.send("Fuck off").end();
 });
-
+//TODO update cache after adding/removing items to db
+// block a media
 app.post(
     "/media/:url",
     asyncHandler(async (req, res) => {
-        // block a media
         console.log("POST REQ", req.params.url);
 
         const url = decode(req.params.url);
 
         console.log("Decoded url", url);
+        //check db
+        const media = await database.getFromUrl(url);
+        if (!!media) {
+            res.status(403).end();
+
+            return;
+        }
+        //check cache
+        const cacheResult = cache.get(url);
+        if (!!cacheResult) {
+            const { blocked, url, hash } = cacheResult;
+            if (blocked) {
+                res.status(403).end();
+                return;
+            }
+            await database.storeHash({ url, hash });
+            cache.cache(url, { url, hash, blocked: true });
+            res.status(200).end();
+            return;
+        }
+
+        const hash = await getHash(url);
+        console.log("Hash: ", hash);
+        await database.storeHash({ url, hash });
+        cache.cache(url, { url, hash, blocked: true });
+        return;
     })
 );
 
 app.get(
-    "/media/",
+    "/media",
     asyncHandler(async (req, res) => {
+        console.log("GET MEDIA");
         const hiddenArray = await database.getAll();
-        return hiddenArray;
+        console.log("MEDIA ARRAY: ", hiddenArray);
+        res.status(200).send(hiddenArray).end();
     })
 );
 
@@ -113,7 +141,7 @@ app.get(
             return;
         }
 
-        console.log("NOT CACHED");
+        //console.log("NOT CACHED");
 
         // check db
         const media = await database.getFromUrl(url);
@@ -124,11 +152,11 @@ app.get(
             return;
         }
 
-        console.log("UNIQUE URL");
+        //console.log("UNIQUE URL");
 
         const hash = await getHash(url);
 
-        console.log("HASH IS", hash);
+        //console.log("HASH IS", hash);
 
         const hashedMedia = await database.getFromHash(hash);
 
@@ -138,7 +166,7 @@ app.get(
             return;
         }
 
-        console.log("NOT BLOCKED");
+        //console.log("NOT BLOCKED");
 
         cache.cache(url, { url, hash, blocked: false });
 
@@ -159,8 +187,29 @@ app.patch(
 app.delete(
     "/media/:url",
     asyncHandler(async (req, res) => {
-        // delete
         console.log("DELETE REQ", req.params.url);
+        const decodedUrl = decode(req.params.url);
+        console.log("DECODED URL: ", decodedUrl);
+        //check cache first
+        const cacheResult = cache.get(decodedUrl);
+        if (!!cacheResult) {
+            const { blocked, hash, url } = cacheResult;
+            if (blocked) {
+                await database.deleteByUrl(url);
+                cache.cache(url, { url, hash, blocked: false });
+                res.status(200).end();
+            }
+        }
+        const media = await database.getFromUrl(decodedUrl);
+        //check db
+        if (!!media) {
+            await database.deleteByUrl(decodedUrl);
+            cache.cache(url, { url, hash, blocked: false });
+            res.status(200).end();
+            return;
+        }
+        res.status(403).end();
+        return;
     })
 );
 
